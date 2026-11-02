@@ -293,6 +293,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .inline-create input { flex: 1; }
 .setup-screen { align-items: center; background: radial-gradient(ellipse at 50% 35%, #f0f1e9, var(--paper) 65%); display: flex; justify-content: center; min-height: 100vh; padding: 24px; }
 .setup-card, .auth-card { background: var(--white); border: 1px solid var(--line); border-radius: 15px; box-shadow: 0 18px 60px #39311e0c; max-width: 440px; padding: 36px; width: 100%; }
+.language-switch { display: flex; gap: 5px; justify-content: flex-end; margin: -12px -12px 12px 0; }
+.language-switch button { background: transparent; border: 1px solid transparent; border-radius: 5px; color: var(--muted); font-size: 10px; padding: 5px 7px; }
+.language-switch button[aria-pressed="true"] { background: var(--green-soft); border-color: #d6e0d1; color: var(--green-dark); font-weight: 700; }
 .setup-card .brand-mark, .auth-card .brand-mark { margin-bottom: 21px; }
 .setup-card .eyebrow, .auth-card .eyebrow { margin: 0 0 9px; }
 .setup-card h1, .auth-card h1 { font-family: var(--serif); font-size: 30px; font-weight: 500; line-height: 1.2; margin: 0 0 10px; }
