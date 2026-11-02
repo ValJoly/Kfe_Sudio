@@ -29,7 +29,7 @@ Open [http://localhost:3000](http://localhost:3000). Add the app to a phone’s 
 - Create an account, then make collections for different places or purposes.
 - Add fabrics with their current quantity and patterns with useful notes.
 - Create future projects and associate an owned pattern and fabric with a planned quantity.
-- Choose metres or yards in Settings. Each saved quantity keeps its unit if the preference changes.
+- Choose metres or yards in Settings. New fabric widths use centimetres or inches to match that preference; each saved quantity and width keeps its unit if the preference changes. New fabric widths default to 150 cm (about 59.1 inches in imperial mode).
 - Choose English or French in Settings; the language preference follows your account across devices.
 - Share a collection by entering the email address already registered to the recipient’s Kfe Studio account. The invited account gets editor access.
 

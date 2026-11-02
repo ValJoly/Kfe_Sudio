@@ -56,6 +56,9 @@ const french: Record<string, string> = {
   "Quantity": "Quantité",
   "Notes": "Notes",
   "Width": "Largeur",
+  "Centimetres": "Centimètres",
+  "Inches": "Pouces",
+  "Width is optional. Default:": "Facultatif. Par défaut :",
   "Add fabric": "Ajouter le tissu",
   "YOUR PATTERN LIBRARY": "VOTRE BIBLIOTHÈQUE DE PATRONS",
   "Patterns you own": "Vos patrons",
@@ -95,14 +98,14 @@ const french: Record<string, string> = {
   "Save project": "Enregistrer le projet",
   "YOUR PREFERENCES": "VOS PRÉFÉRENCES",
   "Measurement units": "Unités de mesure",
-  "Choose the default unit for new fabric quantities and project plans.":
-    "Choisissez l’unité par défaut pour les nouvelles quantités et les projets.",
+  "Choose the default unit for new fabric quantities, widths, and project plans.":
+    "Choisissez l’unité par défaut pour les nouvelles quantités, largeurs et projets.",
   "Metres": "Mètres",
   "Yards": "Yards",
   "Metric": "Métrique",
   "Imperial": "Impérial",
-  "Saved quantities keep their original units if you change this preference.":
-    "Les quantités enregistrées gardent leur unité d’origine si vous changez ce réglage.",
+  "Saved quantities and widths keep their original units.":
+    "Les quantités et largeurs enregistrées gardent leur unité d’origine.",
   "MAKE IT A SHARED SPACE": "PARTAGER CET ESPACE",
   "Share this collection": "Partager cette collection",
   "Invite someone by the email address they use for their Kfe Studio account. They’ll get editor access to this collection.":
@@ -145,8 +148,7 @@ const french: Record<string, string> = {
   "Only a collection owner can invite members": "Seul le propriétaire d’une collection peut inviter des membres.",
   "Collection access granted to": "L’accès à la collection a été accordé à",
   "They can sign in to see it.": "Cette personne peut se connecter pour la consulter.",
-  "New quantities will use": "Les nouvelles quantités utiliseront",
-  "Existing quantities keep their saved units.": "Les quantités existantes conservent leur unité.",
+  "New quantities and fabric widths will use": "Les nouvelles quantités et largeurs de tissu utiliseront",
   "Collection created.": "Collection créée.",
   "Fabric added to your collection.": "Tissu ajouté à votre collection.",
   "Pattern added to your collection.": "Patron ajouté à votre collection.",
