@@ -10,7 +10,7 @@ A mobile-friendly sewing library for tracking fabric, patterns, and future proje
 
 ## Set up Supabase
 
-1. In your Supabase project, open **SQL Editor**, create a query, paste the contents of [`supabase/migrations/202611020001_initial_schema.sql`](supabase/migrations/202611020001_initial_schema.sql), and run it. This creates the tables, grants, triggers, and RLS policies used by the app.
+1. In your Supabase project, open **SQL Editor**, create a query, paste the contents of each file in [`supabase/migrations/`](supabase/migrations), in filename order, and run them one at a time. This creates the tables, grants, triggers, and RLS policies used by the app.
 2. In **Project Settings → API Keys**, copy the **Project URL** and **publishable key**. Do not use a secret or `service_role` key in this browser app.
 3. Copy `.env.example` to `.env.local` and fill in those two values. `.env.local` is ignored by Git; do not commit it.
 4. In **Authentication → URL Configuration**, set the local site URL to `http://localhost:3000`. If email confirmation is enabled, confirm the signup email before signing in.
