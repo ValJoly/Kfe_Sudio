@@ -1,40 +1,12 @@
 "use client";
 
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type HTMLAttributes, type KeyboardEvent } from "react";
 import { translate, type Language } from "./translations";
+import { ItemDialog, projectStatusLabel, type ItemKind, type Selection } from "./item-dialog";
+import type { Fabric, Pattern, Project, Unit } from "./types";
 
-type Unit = "metres" | "yards";
-type WidthUnit = "centimetres" | "inches";
 type Collection = { id: string; name: string };
-type Fabric = {
-  id: string;
-  name: string;
-  category: string | null;
-  color: string | null;
-  quantity: number;
-  quantity_unit: Unit;
-  width: number | null;
-  width_unit: WidthUnit | null;
-};
-type Pattern = {
-  id: string;
-  name: string;
-  brand: string | null;
-  pattern_type: string | null;
-  size_notes: string | null;
-};
-type Project = {
-  id: string;
-  name: string;
-  status: string;
-  patterns: { name: string } | { name: string }[] | null;
-  project_fabrics: {
-    planned_quantity: number;
-    quantity_unit: Unit;
-    fabrics: { name: string } | { name: string }[] | null;
-  }[];
-};
 type View = "overview" | "fabrics" | "patterns" | "projects" | "settings";
 
 type CollectionData = {
@@ -51,6 +23,61 @@ const navigation: { id: View; label: string; icon: string }[] = [
   { id: "settings", label: "Settings", icon: "⚙" },
 ];
 
+const IMAGE_BUCKET = "item-images";
+
+// Downscale and re-encode as JPEG so photos stay small on the free storage plan.
+async function prepareImage(file: File): Promise<Blob> {
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, 1280 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext("2d")!.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.82));
+  if (!blob) throw new Error("Could not process this image.");
+  return blob;
+}
+
+async function uploadImage(supabase: SupabaseClient, collectionId: string, file: File): Promise<string> {
+  const path = `${collectionId}/${crypto.randomUUID()}.jpg`;
+  const { error } = await supabase.storage
+    .from(IMAGE_BUCKET)
+    .upload(path, await prepareImage(file), { contentType: "image/jpeg" });
+  if (error) throw error;
+  return path;
+}
+
+async function withImageUrls<T extends { image_path: string | null; image_url?: string }>(
+  supabase: SupabaseClient,
+  items: T[],
+): Promise<T[]> {
+  const paths = items.map((item) => item.image_path).filter((path): path is string => Boolean(path));
+  if (!paths.length) return items;
+  const { data } = await supabase.storage.from(IMAGE_BUCKET).createSignedUrls(paths, 3600);
+  const urls = new Map(data?.map((entry) => [entry.path, entry.signedUrl]));
+  return items.map((item) => ({ ...item, image_url: item.image_path ? urls.get(item.image_path) : undefined }));
+}
+
+const PATTERN_BUCKET = "pattern-files";
+
+async function uploadPatternFile(supabase: SupabaseClient, collectionId: string, file: File): Promise<string> {
+  const path = `${collectionId}/${crypto.randomUUID()}`;
+  const { error } = await supabase.storage
+    .from(PATTERN_BUCKET)
+    .upload(path, file, { contentType: file.type || "application/octet-stream" });
+  if (error) throw error;
+  return path;
+}
+
+async function withPatternUrls(supabase: SupabaseClient, patterns: Pattern[]): Promise<Pattern[]> {
+  const paths = patterns.map((pattern) => pattern.file_path).filter((path): path is string => Boolean(path));
+  if (!paths.length) return patterns;
+  const { data } = await supabase.storage.from(PATTERN_BUCKET).createSignedUrls(paths, 3600);
+  const urls = new Map(data?.map((entry) => [entry.path, entry.signedUrl]));
+  return patterns.map((pattern) => ({ ...pattern, file_url: pattern.file_path ? urls.get(pattern.file_path) ?? undefined : undefined }));
+}
+
 async function fetchCollectionData(
   supabase: SupabaseClient,
   collectionId: string,
@@ -58,25 +85,25 @@ async function fetchCollectionData(
   const [fabricResult, patternResult, projectResult] = await Promise.all([
     supabase
       .from("fabrics")
-      .select("id, name, category, color, quantity, quantity_unit, width, width_unit")
+      .select("id, name, category, color, quantity, quantity_unit, width, width_unit, notes, image_path")
       .eq("collection_id", collectionId)
       .order("name"),
     supabase
       .from("patterns")
-      .select("id, name, brand, pattern_type, size_notes")
+      .select("id, name, brand, pattern_type, size_notes, notes, file_path, file_name, file_type")
       .eq("collection_id", collectionId)
       .order("name"),
     supabase
       .from("projects")
-      .select("id, name, status, patterns(name), project_fabrics(planned_quantity, quantity_unit, fabrics(name))")
+      .select("id, name, status, notes, pattern_id, patterns(name), project_fabrics(fabric_id, planned_quantity, quantity_unit, fabrics(name))")
       .eq("collection_id", collectionId)
       .order("created_at", { ascending: false }),
   ]);
   const failed = fabricResult.error ?? patternResult.error ?? projectResult.error;
   if (failed) throw failed;
   return {
-    fabrics: (fabricResult.data ?? []) as Fabric[],
-    patterns: (patternResult.data ?? []) as Pattern[],
+    fabrics: await withImageUrls(supabase, (fabricResult.data ?? []) as Fabric[]),
+    patterns: await withPatternUrls(supabase, (patternResult.data ?? []) as Pattern[]),
     projects: (projectResult.data ?? []) as Project[],
   };
 }
@@ -115,10 +142,23 @@ export default function Home() {
   const [patterns, setPatterns] = useState<Pattern[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [view, setView] = useState<View>("overview");
+  const [selection, setSelection] = useState<Selection | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const t = (text: string) => translate(language, text);
+
+  const openItem = (kind: ItemKind, id: string): HTMLAttributes<HTMLElement> => ({
+    role: "button",
+    tabIndex: 0,
+    onClick: () => { setError(""); setSelection({ kind, id }); },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+      if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      setError("");
+      setSelection({ kind, id });
+    },
+  });
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -285,8 +325,18 @@ export default function Home() {
     const width = values.get("width")?.toString().trim() ?? "";
     setBusy(true);
     setError("");
+    let imagePath: string | null = null;
+    try {
+      const image = values.get("image");
+      if (image instanceof File && image.size > 0) imagePath = await uploadImage(supabase, selectedCollectionId, image);
+    } catch (uploadError) {
+      setBusy(false);
+      setError(uploadError instanceof Error ? uploadError.message : t("Image upload failed."));
+      return;
+    }
     const { error: insertError } = await supabase.from("fabrics").insert({
       collection_id: selectedCollectionId,
+      image_path: imagePath,
       name: values.get("name")?.toString().trim(),
       category: values.get("category")?.toString().trim() || null,
       color: values.get("color")?.toString().trim() || null,
@@ -298,6 +348,7 @@ export default function Home() {
     });
     setBusy(false);
     if (insertError) {
+      if (imagePath) await supabase.storage.from(IMAGE_BUCKET).remove([imagePath]);
       setError(insertError.message);
       return;
     }
@@ -313,8 +364,23 @@ export default function Home() {
     const values = new FormData(form);
     setBusy(true);
     setError("");
+    let file: { path: string; name: string; type: string } | null = null;
+    try {
+      const picked = values.get("file");
+      if (picked instanceof File && picked.size > 0) {
+        const path = await uploadPatternFile(supabase, selectedCollectionId, picked);
+        file = { path, name: picked.name, type: picked.type };
+      }
+    } catch (uploadError) {
+      setBusy(false);
+      setError(uploadError instanceof Error ? uploadError.message : t("File upload failed."));
+      return;
+    }
     const { error: insertError } = await supabase.from("patterns").insert({
       collection_id: selectedCollectionId,
+      file_path: file?.path ?? null,
+      file_name: file?.name ?? null,
+      file_type: file?.type || null,
       name: values.get("name")?.toString().trim(),
       brand: values.get("brand")?.toString().trim() || null,
       pattern_type: values.get("pattern_type")?.toString().trim() || null,
@@ -323,12 +389,108 @@ export default function Home() {
     });
     setBusy(false);
     if (insertError) {
+      if (file) await supabase.storage.from(PATTERN_BUCKET).remove([file.path]);
       setError(insertError.message);
       return;
     }
     form.reset();
     setNotice(t("Pattern added to your collection."));
     await loadCollectionData();
+  }
+
+  async function saveItem(kind: ItemKind, id: string, values: FormData): Promise<boolean> {
+    if (!supabase || !selectedCollectionId) return false;
+    const text = (key: string) => values.get(key)?.toString().trim() || null;
+    const picked = values.get(kind === "fabric" ? "image" : "file");
+    const file = picked instanceof File && picked.size > 0 ? picked : null;
+    const fail = (message: string) => { setBusy(false); setError(message); return false; };
+    if (kind === "project" && Boolean(text("fabric_id")) !== Boolean(text("planned_quantity"))) {
+      setError(t("Choose both a fabric and its planned quantity, or leave both blank."));
+      return false;
+    }
+    setBusy(true);
+    setError("");
+
+    let newPath: string | null = null;
+    let oldPath: string | null = null;
+    try {
+      if (file && kind === "fabric") newPath = await uploadImage(supabase, selectedCollectionId, file);
+      if (file && kind === "pattern") newPath = await uploadPatternFile(supabase, selectedCollectionId, file);
+    } catch (uploadError) {
+      return fail(uploadError instanceof Error ? uploadError.message : t("File upload failed."));
+    }
+
+    let query;
+    let bucket = IMAGE_BUCKET;
+    if (kind === "fabric") {
+      const current = fabrics.find((item) => item.id === id);
+      const width = text("width");
+      oldPath = newPath ? current?.image_path ?? null : null;
+      query = supabase.from("fabrics").update({
+        name: text("name"),
+        category: text("category"),
+        color: text("color"),
+        quantity: Number(values.get("quantity")),
+        width: width ? Number(width) : null,
+        width_unit: width ? current?.width_unit ?? (current?.quantity_unit === "yards" ? "inches" : "centimetres") : null,
+        notes: text("notes"),
+        ...(newPath ? { image_path: newPath } : {}),
+      });
+    } else if (kind === "pattern") {
+      bucket = PATTERN_BUCKET;
+      oldPath = newPath ? patterns.find((item) => item.id === id)?.file_path ?? null : null;
+      query = supabase.from("patterns").update({
+        name: text("name"),
+        brand: text("brand"),
+        pattern_type: text("pattern_type"),
+        size_notes: text("size_notes"),
+        notes: text("notes"),
+        ...(newPath && file ? { file_path: newPath, file_name: file.name, file_type: file.type || null } : {}),
+      });
+    } else {
+      query = supabase.from("projects").update({
+        name: text("name"),
+        status: text("status"),
+        pattern_id: text("pattern_id"),
+        notes: text("notes"),
+      });
+    }
+
+    // RLS turns a forbidden update into zero affected rows instead of an error
+    const { data, error: updateError } = await query.eq("id", id).select("id");
+    if (updateError || !data?.length) {
+      if (newPath) await supabase.storage.from(bucket).remove([newPath]);
+      return fail(updateError?.message ?? t("You don’t have permission to edit this item."));
+    }
+    if (oldPath) await supabase.storage.from(bucket).remove([oldPath]);
+
+    if (kind === "project") {
+      const project = projects.find((item) => item.id === id);
+      for (const link of project?.project_fabrics ?? []) {
+        const linkQuery = supabase.from("project_fabrics");
+        const result = values.get(`remove_${link.fabric_id}`)
+          ? await linkQuery.delete().eq("project_id", id).eq("fabric_id", link.fabric_id)
+          : await linkQuery.update({ planned_quantity: Number(values.get(`qty_${link.fabric_id}`)) }).eq("project_id", id).eq("fabric_id", link.fabric_id);
+        if (result.error) { await loadCollectionData(); return fail(result.error.message); }
+      }
+      const fabricId = text("fabric_id");
+      const plannedQuantity = text("planned_quantity");
+      if (fabricId && plannedQuantity) {
+        const { error: linkError } = await supabase.from("project_fabrics").insert({
+          project_id: id,
+          collection_id: selectedCollectionId,
+          fabric_id: fabricId,
+          planned_quantity: Number(plannedQuantity),
+          quantity_unit: unit,
+        });
+        if (linkError) { await loadCollectionData(); return fail(linkError.message); }
+      }
+    }
+
+    setBusy(false);
+    setNotice(t("Changes saved."));
+    await loadCollectionData();
+    return true;
   }
 
   async function addProject(event: FormEvent<HTMLFormElement>) {
@@ -363,6 +525,7 @@ export default function Home() {
     if (fabricId && plannedQuantity) {
       const { error: associationError } = await supabase.from("project_fabrics").insert({
         project_id: project.id,
+        collection_id: selectedCollectionId,
         fabric_id: fabricId,
         planned_quantity: Number(plannedQuantity),
         quantity_unit: unit,
@@ -613,7 +776,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                   </div>
                   {fabrics.length ? (
                     <div className="fabric-grid">
-                      {fabrics.slice(0, 4).map((fabric) => <FabricCard fabric={fabric} key={fabric.id} language={language} />)}
+                      {fabrics.slice(0, 4).map((fabric) => <FabricCard fabric={fabric} key={fabric.id} language={language} openProps={openItem("fabric", fabric.id)} />)}
                     </div>
                   ) : <EmptyCard title={t("No fabric in this collection yet")} copy={t("Add a fabric to start keeping track of your stash.")} />}
                   <div className="quick-links">
@@ -627,7 +790,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                 <div className="two-column">
                   <section>
                     <div className="section-heading"><div><p className="eyebrow">{t("YOUR STASH")}</p><h2>{t("Fabric collection")}</h2></div><span className="count-badge">{fabrics.length} {t("pieces")}</span></div>
-                    {fabrics.length ? <div className="fabric-list">{fabrics.map((fabric) => <FabricCard fabric={fabric} key={fabric.id} language={language} />)}</div> : <EmptyCard title={t("Your fabric shelf is empty")} copy={t("Add your first fabric with its quantity and details.")} />}
+                    {fabrics.length ? <div className="fabric-list">{fabrics.map((fabric) => <FabricCard fabric={fabric} key={fabric.id} language={language} openProps={openItem("fabric", fabric.id)} />)}</div> : <EmptyCard title={t("Your fabric shelf is empty")} copy={t("Add your first fabric with its quantity and details.")} />}
                   </section>
                   <FormCard eyebrow={t("ADD TO YOUR STASH")} title={t("New fabric")}>
                     <form className="form-stack" onSubmit={addFabric}>
@@ -640,6 +803,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       <label>{t("Width")} ({t(unit === "metres" ? "Centimetres" : "Inches")})<input key={unit} defaultValue={unit === "metres" ? "150" : "59.1"} min="0" name="width" step="0.1" type="number" /></label>
                       <p className="form-hint">{t("Width is optional. Default:")} {unit === "metres" ? "150 cm" : "59.1 in"}.</p>
                       <label>{t("Notes")}<textarea name="notes" placeholder={language === "fr" ? "Lieu d’achat ou détail à retenir…" : "Where you bought it, or anything to remember…"} rows={3} /></label>
+                      <label>{t("Photo")}<input accept="image/*" name="image" type="file" /></label>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Add fabric")}</button>
                     </form>
                   </FormCard>
@@ -653,9 +817,12 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                     {patterns.length ? (
                       <div className="pattern-list">
                         {patterns.map((pattern) => (
-                          <article className="pattern-card" key={pattern.id}>
-                            <span className="pattern-icon">✂</span>
-                            <div><h3>{pattern.name}</h3><p>{[pattern.brand, pattern.pattern_type].filter(Boolean).join(" · ") || "Pattern details not added"}</p>{pattern.size_notes && <small>{pattern.size_notes}</small>}</div>
+                          <article className="pattern-card is-clickable" key={pattern.id} {...openItem("pattern", pattern.id)}>
+                            {pattern.file_url && pattern.file_type?.startsWith("image/")
+                              // eslint-disable-next-line @next/next/no-img-element
+                              ? <img alt={pattern.name} className="item-photo" loading="lazy" src={pattern.file_url} />
+                              : <span className="pattern-icon">{pattern.file_path ? "📄" : "✂"}</span>}
+                            <div><h3>{pattern.name}</h3><p>{[pattern.brand, pattern.pattern_type].filter(Boolean).join(" · ") || "Pattern details not added"}</p>{pattern.size_notes && <small>{pattern.size_notes}</small>}{pattern.file_url && <a className="file-link" href={pattern.file_url} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} rel="noreferrer" target="_blank">{t("Open file")}: {pattern.file_name}</a>}</div>
                           </article>
                         ))}
                       </div>
@@ -670,6 +837,8 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       </div>
                       <label>{t("Sizes or included views")}<input name="size_notes" placeholder="Sizes 34–46, view A and B" /></label>
                       <label>{t("Notes")}<textarea name="notes" placeholder={t("Anything you’d like to remember…")} rows={3} /></label>
+                      <label>{t("File (PDF, image, or any document)")}<input name="file" type="file" /></label>
+                      <p className="form-hint">{t("Up to 20 MB.")}</p>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Add pattern")}</button>
                     </form>
                   </FormCard>
@@ -683,9 +852,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                     {projects.length ? (
                       <div className="project-list">
                         {projects.map((project) => (
-                          <article className="project-card" key={project.id}>
+                          <article className="project-card is-clickable" key={project.id} {...openItem("project", project.id)}>
                             <span className="project-icon">✳</span>
-                            <div><span className="status-tag">{t(project.status)}</span><h3>{project.name}</h3><p>{firstRelation(project.patterns)?.name ?? t("No pattern selected yet")}</p>{project.project_fabrics.map((item) => { const fabric = firstRelation(item.fabrics); return <small className="project-material" key={`${project.id}-${fabric?.name}`}>{fabric?.name ?? t("Fabric")}: {item.planned_quantity} {t(item.quantity_unit === "metres" ? "Metres" : "Yards")}</small>; })}</div>
+                            <div><span className="status-tag">{projectStatusLabel(project.status, t)}</span><h3>{project.name}</h3><p>{firstRelation(project.patterns)?.name ?? t("No pattern selected yet")}</p>{project.project_fabrics.map((item) => { const fabric = firstRelation(item.fabrics); return <small className="project-material" key={`${project.id}-${fabric?.name}`}>{fabric?.name ?? t("Fabric")}: {item.planned_quantity} {t(item.quantity_unit === "metres" ? "Metres" : "Yards")}</small>; })}</div>
                           </article>
                         ))}
                       </div>
@@ -757,6 +926,21 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
         </div>
       </main>
 
+      {selection && (
+        <ItemDialog
+          busy={busy}
+          error={error}
+          fabrics={fabrics}
+          language={language}
+          onClose={() => { setSelection(null); setError(""); }}
+          onSave={saveItem}
+          patterns={patterns}
+          projects={projects}
+          selection={selection}
+          unit={unit}
+        />
+      )}
+
       <nav className="mobile-nav" aria-label="Main navigation">
         {navigation.map((item) => (
           <button
@@ -774,12 +958,15 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
   );
 }
 
-function FabricCard({ fabric, language }: { fabric: Fabric; language: Language }) {
+function FabricCard({ fabric, language, openProps }: { fabric: Fabric; language: Language; openProps: HTMLAttributes<HTMLElement> }) {
   const t = (text: string) => translate(language, text);
   return (
-    <article className="fabric-card">
+    <article className="fabric-card is-clickable" {...openProps}>
       <div className={`fabric-swatch swatch-${(fabric.color ?? "natural").toLowerCase().replace(/[^a-z]/g, "")}`}>
-        <span aria-hidden="true">✳</span>
+        {fabric.image_url
+          // eslint-disable-next-line @next/next/no-img-element
+          ? <img alt={fabric.name} className="item-photo" loading="lazy" src={fabric.image_url} />
+          : <span aria-hidden="true">✳</span>}
       </div>
       <div className="fabric-card-body">
         <div><span className="fabric-category">{fabric.category ?? t("Fabric")}</span><strong className="fabric-quantity">{fabric.quantity} {t(fabric.quantity_unit === "metres" ? "Metres" : "Yards")}</strong></div>
