@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import { translate, type Language } from "./translations";
 
 type Unit = "metres" | "yards";
+type WidthUnit = "centimetres" | "inches";
 type Collection = { id: string; name: string };
 type Fabric = {
   id: string;
@@ -13,6 +14,8 @@ type Fabric = {
   color: string | null;
   quantity: number;
   quantity_unit: Unit;
+  width: number | null;
+  width_unit: WidthUnit | null;
 };
 type Pattern = {
   id: string;
@@ -55,7 +58,7 @@ async function fetchCollectionData(
   const [fabricResult, patternResult, projectResult] = await Promise.all([
     supabase
       .from("fabrics")
-      .select("id, name, category, color, quantity, quantity_unit")
+      .select("id, name, category, color, quantity, quantity_unit, width, width_unit")
       .eq("collection_id", collectionId)
       .order("name"),
     supabase
@@ -279,6 +282,7 @@ export default function Home() {
     if (!supabase || !selectedCollectionId) return;
     const form = event.currentTarget;
     const values = new FormData(form);
+    const width = values.get("width")?.toString().trim() ?? "";
     setBusy(true);
     setError("");
     const { error: insertError } = await supabase.from("fabrics").insert({
@@ -288,6 +292,8 @@ export default function Home() {
       color: values.get("color")?.toString().trim() || null,
       quantity: Number(values.get("quantity")),
       quantity_unit: unit,
+      width: width ? Number(width) : null,
+      width_unit: width ? (unit === "metres" ? "centimetres" : "inches") : null,
       notes: values.get("notes")?.toString().trim() || null,
     });
     setBusy(false);
@@ -409,7 +415,7 @@ export default function Home() {
       setUnit(previousUnit);
       setError(updateError.message);
     }
-    else setNotice(`${t("New quantities will use")} ${t(nextUnit === "metres" ? "Metres" : "Yards")}. ${t("Existing quantities keep their saved units.")}`);
+    else setNotice(`${t("New quantities and fabric widths will use")} ${t(nextUnit === "metres" ? "Metres" : "Yards")}. ${t("Saved quantities and widths keep their original units.")}`);
   }
 
   async function updateLanguage(nextLanguage: Language) {
@@ -631,7 +637,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                         <label>{t("Color")}<input name="color" placeholder={language === "fr" ? "Naturel, marine…" : "Natural, navy…"} /></label>
                       </div>
                       <label>{t("Quantity")} ({t(unit === "metres" ? "Metres" : "Yards")})<input min="0" name="quantity" placeholder="3.5" required step="0.01" type="number" /></label>
-                      <label>{t("Notes")}<textarea name="notes" placeholder={language === "fr" ? "Largeur, lieu d’achat ou détail à retenir…" : "Width, where you bought it, or anything to remember…"} rows={3} /></label>
+                      <label>{t("Width")} ({t(unit === "metres" ? "Centimetres" : "Inches")})<input key={unit} defaultValue={unit === "metres" ? "150" : "59.1"} min="0" name="width" step="0.1" type="number" /></label>
+                      <p className="form-hint">{t("Width is optional. Default:")} {unit === "metres" ? "150 cm" : "59.1 in"}.</p>
+                      <label>{t("Notes")}<textarea name="notes" placeholder={language === "fr" ? "Lieu d’achat ou détail à retenir…" : "Where you bought it, or anything to remember…"} rows={3} /></label>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Add fabric")}</button>
                     </form>
                   </FormCard>
@@ -712,7 +720,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                   </section>
                   <section className="settings-card">
                     <p className="eyebrow">{t("YOUR PREFERENCES")}</p><h2>{t("Measurement units")}</h2>
-                    <p className="muted">{t("Choose the default unit for new fabric quantities and project plans.")}</p>
+                    <p className="muted">{t("Choose the default unit for new fabric quantities, widths, and project plans.")}</p>
                     <div className="unit-options" role="group" aria-label={t("Measurement units")}>
                       {(["metres", "yards"] as Unit[]).map((option) => (
                         <button className={`unit-option ${unit === option ? "unit-option-active" : ""}`} key={option} onClick={() => void updateUnit(option)} type="button">
@@ -720,7 +728,7 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                         </button>
                       ))}
                     </div>
-                    <p className="form-hint">{t("Saved quantities keep their original units if you change this preference.")}</p>
+                    <p className="form-hint">{t("Saved quantities and widths keep their original units.")}</p>
                   </section>
                   <section className="settings-card">
                     <p className="eyebrow">{t("MAKE IT A SHARED SPACE")}</p><h2>{t("Share this collection")}</h2>
@@ -777,6 +785,7 @@ function FabricCard({ fabric, language }: { fabric: Fabric; language: Language }
         <div><span className="fabric-category">{fabric.category ?? t("Fabric")}</span><strong className="fabric-quantity">{fabric.quantity} {t(fabric.quantity_unit === "metres" ? "Metres" : "Yards")}</strong></div>
         <h3>{fabric.name}</h3>
         <p>{fabric.color || t("Color not noted")}</p>
+        {fabric.width !== null && fabric.width_unit && <p>{t("Width")}: {fabric.width.toLocaleString(language === "fr" ? "fr-FR" : "en-US")} {t(fabric.width_unit === "centimetres" ? "Centimetres" : "Inches")}</p>}
       </div>
     </article>
   );
