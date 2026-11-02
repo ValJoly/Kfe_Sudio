@@ -1,0 +1,11 @@
+services:
+  app:
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY}
+    restart: unless-stopped
+    # Host port 8317 -> container port 3000; point the Cloudflare tunnel at http://localhost:8317
+    ports:
+      - "127.0.0.1:8317:3000"
