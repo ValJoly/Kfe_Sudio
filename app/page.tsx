@@ -3,7 +3,7 @@
 import { createClient, type SupabaseClient, type User } from "@supabase/supabase-js";
 import { useCallback, useEffect, useMemo, useState, type FormEvent, type HTMLAttributes, type KeyboardEvent } from "react";
 import { translate, type Language } from "./translations";
-import { ItemDialog, projectStatusLabel, type ItemKind, type Selection } from "./item-dialog";
+import { ItemDialog, Modal, projectStatusLabel, type ItemKind, type Selection } from "./item-dialog";
 import type { Fabric, Pattern, Project, Unit } from "./types";
 
 type Collection = { id: string; name: string };
@@ -143,6 +143,8 @@ export default function Home() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [view, setView] = useState<View>("overview");
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [history, setHistory] = useState<Selection[]>([]);
+  const [adding, setAdding] = useState<ItemKind | null>(null);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -151,14 +153,28 @@ export default function Home() {
   const openItem = (kind: ItemKind, id: string): HTMLAttributes<HTMLElement> => ({
     role: "button",
     tabIndex: 0,
-    onClick: () => { setError(""); setSelection({ kind, id }); },
+    onClick: () => { setError(""); setHistory([]); setSelection({ kind, id }); },
     onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
       if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " ")) return;
       event.preventDefault();
       setError("");
+      setHistory([]);
       setSelection({ kind, id });
     },
   });
+
+  const openAdd = (kind: ItemKind) => { setError(""); setAdding(kind); };
+  const closeAdd = () => { setAdding(null); setError(""); };
+  const navigateTo = (next: Selection) => {
+    setError("");
+    setHistory((past) => (selection ? [...past, selection] : past));
+    setSelection(next);
+  };
+  const goBack = () => {
+    setError("");
+    setSelection(history[history.length - 1] ?? null);
+    setHistory((past) => past.slice(0, -1));
+  };
 
   useEffect(() => {
     document.documentElement.lang = language;
@@ -353,6 +369,7 @@ export default function Home() {
       return;
     }
     form.reset();
+    setAdding(null);
     setNotice(t("Fabric added to your collection."));
     await loadCollectionData();
   }
@@ -394,6 +411,7 @@ export default function Home() {
       return;
     }
     form.reset();
+    setAdding(null);
     setNotice(t("Pattern added to your collection."));
     await loadCollectionData();
   }
@@ -539,6 +557,7 @@ export default function Home() {
     }
     setBusy(false);
     form.reset();
+    setAdding(null);
     setNotice(t("Future project saved."));
     await loadCollectionData();
   }
@@ -780,19 +799,21 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                     </div>
                   ) : <EmptyCard title={t("No fabric in this collection yet")} copy={t("Add a fabric to start keeping track of your stash.")} />}
                   <div className="quick-links">
-                    <button className="quick-link" onClick={() => setView("fabrics")} type="button"><span>＋</span><div><strong>{t("Add a fabric")}</strong><small>{t("Record quantity and details")}</small></div><b>→</b></button>
-                    <button className="quick-link" onClick={() => setView("projects")} type="button"><span>✳</span><div><strong>{t("Plan a future make")}</strong><small>{t("Pair a pattern with fabric")}</small></div><b>→</b></button>
+                    <button className="quick-link" onClick={() => { setView("fabrics"); openAdd("fabric"); }} type="button"><span>＋</span><div><strong>{t("Add a fabric")}</strong><small>{t("Record quantity and details")}</small></div><b>→</b></button>
+                    <button className="quick-link" onClick={() => { setView("projects"); openAdd("project"); }} type="button"><span>✳</span><div><strong>{t("Plan a future make")}</strong><small>{t("Pair a pattern with fabric")}</small></div><b>→</b></button>
                   </div>
                 </>
               )}
 
               {view === "fabrics" && (
-                <div className="two-column">
+                <>
                   <section>
-                    <div className="section-heading"><div><p className="eyebrow">{t("YOUR STASH")}</p><h2>{t("Fabric collection")}</h2></div><span className="count-badge">{fabrics.length} {t("pieces")}</span></div>
+                    <div className="section-heading"><div><p className="eyebrow">{t("YOUR STASH")}</p><h2>{t("Fabric collection")}</h2></div><div className="heading-actions"><span className="count-badge">{fabrics.length} {t("pieces")}</span><button className="button button-primary" onClick={() => openAdd("fabric")} type="button">＋ {t("Add fabric")}</button></div></div>
                     {fabrics.length ? <div className="fabric-list">{fabrics.map((fabric) => <FabricCard fabric={fabric} key={fabric.id} language={language} openProps={openItem("fabric", fabric.id)} />)}</div> : <EmptyCard title={t("Your fabric shelf is empty")} copy={t("Add your first fabric with its quantity and details.")} />}
                   </section>
-                  <FormCard eyebrow={t("ADD TO YOUR STASH")} title={t("New fabric")}>
+                  {adding === "fabric" && (
+                  <Modal eyebrow={t("ADD TO YOUR STASH")} language={language} onClose={closeAdd} title={t("New fabric")}>
+                    {error && <ErrorMessage>{error}</ErrorMessage>}
                     <form className="form-stack" onSubmit={addFabric}>
                       <label>{t("Fabric name")}<input name="name" placeholder={language === "fr" ? "Ex. : lin lavé doux" : "e.g. Soft washed linen"} required /></label>
                       <div className="form-row">
@@ -806,14 +827,15 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       <label>{t("Photo")}<input accept="image/*" name="image" type="file" /></label>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Add fabric")}</button>
                     </form>
-                  </FormCard>
-                </div>
-              )}
+                                        </Modal>
+                                        )}
+                                      </>
+                                    )}
 
               {view === "patterns" && (
-                <div className="two-column">
+                <>
                   <section>
-                    <div className="section-heading"><div><p className="eyebrow">{t("YOUR PATTERN LIBRARY")}</p><h2>{t("Patterns you own")}</h2></div><span className="count-badge">{patterns.length} {t("patterns")}</span></div>
+                    <div className="section-heading"><div><p className="eyebrow">{t("YOUR PATTERN LIBRARY")}</p><h2>{t("Patterns you own")}</h2></div><div className="heading-actions"><span className="count-badge">{patterns.length} {t("patterns")}</span><button className="button button-primary" onClick={() => openAdd("pattern")} type="button">＋ {t("Add pattern")}</button></div></div>
                     {patterns.length ? (
                       <div className="pattern-list">
                         {patterns.map((pattern) => (
@@ -828,7 +850,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       </div>
                     ) : <EmptyCard title={t("No patterns here yet")} copy={t("Add patterns you own so they’re ready for a future project.")} />}
                   </section>
-                  <FormCard eyebrow={t("GROW YOUR LIBRARY")} title={t("New pattern")}>
+                  {adding === "pattern" && (
+                  <Modal eyebrow={t("GROW YOUR LIBRARY")} language={language} onClose={closeAdd} title={t("New pattern")}>
+                    {error && <ErrorMessage>{error}</ErrorMessage>}
                     <form className="form-stack" onSubmit={addPattern}>
                       <label>{t("Pattern name")}<input name="name" placeholder={language === "fr" ? "Ex. : chemise de tous les jours" : "e.g. Everyday Shirt"} required /></label>
                       <div className="form-row">
@@ -841,14 +865,15 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       <p className="form-hint">{t("Up to 20 MB.")}</p>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Add pattern")}</button>
                     </form>
-                  </FormCard>
-                </div>
-              )}
+                                        </Modal>
+                                        )}
+                                      </>
+                                    )}
 
               {view === "projects" && (
-                <div className="two-column">
+                <>
                   <section>
-                    <div className="section-heading"><div><p className="eyebrow">{t("SOMETHING TO LOOK FORWARD TO")}</p><h2>{t("Future makes")}</h2></div><span className="count-badge">{projects.length} {t("planned")}</span></div>
+                    <div className="section-heading"><div><p className="eyebrow">{t("SOMETHING TO LOOK FORWARD TO")}</p><h2>{t("Future makes")}</h2></div><div className="heading-actions"><span className="count-badge">{projects.length} {t("planned")}</span><button className="button button-primary" onClick={() => openAdd("project")} type="button">＋ {t("New project")}</button></div></div>
                     {projects.length ? (
                       <div className="project-list">
                         {projects.map((project) => (
@@ -860,7 +885,9 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       </div>
                     ) : <EmptyCard title={t("Your next project is waiting")} copy={t("Make a plan and connect it to a pattern and fabric you own.")} />}
                   </section>
-                  <FormCard eyebrow={t("PLAN SOMETHING LOVELY")} title={t("New project")}>
+                  {adding === "project" && (
+                  <Modal eyebrow={t("PLAN SOMETHING LOVELY")} language={language} onClose={closeAdd} title={t("New project")}>
+                    {error && <ErrorMessage>{error}</ErrorMessage>}
                     <form className="form-stack" onSubmit={addProject}>
                       <label>{t("Project name")}<input name="name" placeholder={language === "fr" ? "Ex. : robe d’été fleurie" : "e.g. Summer garden dress"} required /></label>
                       <label>{t("Pattern")}<select defaultValue="" name="pattern_id"><option value="">{t("Choose a pattern (optional)")}</option>{patterns.map((pattern) => <option key={pattern.id} value={pattern.id}>{pattern.name}</option>)}</select></label>
@@ -870,9 +897,10 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
                       <label>{t("Notes")}<textarea name="notes" placeholder={t("Ideas, alterations, or a date to remember…")} rows={3} /></label>
                       <button className="button button-primary" disabled={busy} type="submit">{t("Save project")}</button>
                     </form>
-                  </FormCard>
-                </div>
-              )}
+                                        </Modal>
+                                        )}
+                                      </>
+                                    )}
 
               {view === "settings" && (
                 <div className="settings-layout">
@@ -932,7 +960,11 @@ NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-publishable-key`}</pre>
           error={error}
           fabrics={fabrics}
           language={language}
-          onClose={() => { setSelection(null); setError(""); }}
+          onClose={() => { setSelection(null); setHistory([]); setError(""); }}
+          onNavigate={navigateTo}
+          onBack={goBack}
+          canGoBack={history.length > 0}
+          key={`${selection.kind}-${selection.id}`}
           onSave={saveItem}
           patterns={patterns}
           projects={projects}
@@ -976,10 +1008,6 @@ function FabricCard({ fabric, language, openProps }: { fabric: Fabric; language:
       </div>
     </article>
   );
-}
-
-function FormCard({ eyebrow, title, children }: { eyebrow: string; title: string; children: React.ReactNode }) {
-  return <section className="form-card"><p className="eyebrow">{eyebrow}</p><h2>{title}</h2>{children}</section>;
 }
 
 function EmptyCard({ title, copy }: { title: string; copy: string }) {

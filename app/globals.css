@@ -192,6 +192,12 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .item-photo { border-radius: inherit; height: 100%; object-fit: cover; width: 100%; }
 .file-link { color: var(--green-dark); display: block; font-size: 10px; margin-top: 5px; overflow-wrap: anywhere; }
 .is-clickable { cursor: pointer; }
+.heading-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+.back-button { display: block; margin: -4px 0 6px -5px; }
+.link-button { background: none; border: 0; color: var(--green-dark); cursor: pointer; font: inherit; font-weight: 700; padding: 0; text-align: left; text-decoration: underline; text-underline-offset: 2px; }
+.link-button:hover { color: var(--green); }
+.pattern-list, .project-list { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
+@media (min-width: 1100px) { .fabric-list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .is-clickable:hover { border-color: #c9d3c4; }
 .is-clickable:focus-visible { outline: 2px solid var(--green); outline-offset: 2px; }
 .item-dialog { background: var(--white); border: 0; border-radius: 14px; box-shadow: 0 20px 60px #0003; color: var(--ink); max-height: 90dvh; max-width: 480px; overflow-y: auto; padding: 22px; width: calc(100% - 32px); }

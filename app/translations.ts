@@ -64,6 +64,8 @@ const french: Record<string, string> = {
   "PATTERN": "PATRON",
   "PROJECT": "PROJET",
   "Close": "Fermer",
+  "Back": "Retour",
+  "Used in projects": "Utilisé dans les projets",
   "File": "Fichier",
   "Status": "Statut",
   "Edit": "Modifier",

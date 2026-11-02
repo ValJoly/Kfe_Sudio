@@ -31,19 +31,52 @@ type Props = {
   language: Language;
   busy: boolean;
   error: string;
+  canGoBack: boolean;
+  onBack: () => void;
+  onNavigate: (selection: Selection) => void;
   onClose: () => void;
   onSave: (kind: ItemKind, id: string, values: FormData) => Promise<boolean>;
 };
 
-export function ItemDialog({ selection, fabrics, patterns, projects, unit, language, busy, error, onClose, onSave }: Props) {
+export function Modal({ eyebrow, title, language, onBack, onClose, children }: {
+  eyebrow: string;
+  title: string;
+  language: Language;
+  onBack?: () => void;
+  onClose: () => void;
+  children: ReactNode;
+}) {
   const t = (text: string) => translate(language, text);
   const dialogRef = useRef<HTMLDialogElement>(null);
-  const [editing, setEditing] = useState(false);
 
   useEffect(() => {
     const dialog = dialogRef.current;
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
+
+  return (
+    <dialog
+      aria-label={title}
+      className="item-dialog"
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onClose={onClose}
+      ref={dialogRef}
+    >
+      <header className="dialog-header">
+        <div>
+          {onBack && <button className="text-button back-button" onClick={onBack} type="button">← {t("Back")}</button>}
+          <p className="eyebrow">{eyebrow}</p><h2>{title}</h2>
+        </div>
+        <button aria-label={t("Close")} className="text-button" onClick={onClose} type="button">✕</button>
+      </header>
+      {children}
+    </dialog>
+  );
+}
+
+export function ItemDialog({ selection, fabrics, patterns, projects, unit, language, busy, error, canGoBack, onBack, onNavigate, onClose, onSave }: Props) {
+  const t = (text: string) => translate(language, text);
+  const [editing, setEditing] = useState(false);
 
   const fabric = selection.kind === "fabric" ? fabrics.find((item) => item.id === selection.id) : undefined;
   const pattern = selection.kind === "pattern" ? patterns.find((item) => item.id === selection.id) : undefined;
@@ -58,19 +91,17 @@ export function ItemDialog({ selection, fabrics, patterns, projects, unit, langu
 
   const number = (value: number) => value.toLocaleString(language === "fr" ? "fr-FR" : "en-US");
   const unitLabel = (value: Unit) => t(value === "metres" ? "Metres" : "Yards");
+  const link = (kind: ItemKind, id: string, label: string) => (
+    <button className="link-button" onClick={() => onNavigate({ kind, id })} type="button">{label}</button>
+  );
+  const usedIn = fabric
+    ? projects.filter((item) => item.project_fabrics.some((entry) => entry.fabric_id === fabric.id))
+    : pattern
+      ? projects.filter((item) => item.pattern_id === pattern.id)
+      : [];
 
   return (
-    <dialog
-      aria-label={title}
-      className="item-dialog"
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
-      onClose={onClose}
-      ref={dialogRef}
-    >
-      <header className="dialog-header">
-        <div><p className="eyebrow">{eyebrow}</p><h2>{title}</h2></div>
-        <button aria-label={t("Close")} className="text-button" onClick={onClose} type="button">✕</button>
-      </header>
+    <Modal eyebrow={eyebrow} language={language} onBack={canGoBack ? onBack : undefined} onClose={onClose} title={title}>
       {error && <p className="notice notice-error" role="alert">{error}</p>}
 
       {!editing && (
@@ -87,6 +118,7 @@ export function ItemDialog({ selection, fabrics, patterns, projects, unit, langu
                 <Row label={t("Quantity")} value={`${number(fabric.quantity)} ${unitLabel(fabric.quantity_unit)}`} />
                 <Row label={t("Width")} value={fabric.width !== null && fabric.width_unit ? `${number(fabric.width)} ${t(fabric.width_unit === "centimetres" ? "Centimetres" : "Inches")}` : null} />
                 <Row label={t("Notes")} value={fabric.notes} />
+                <Row label={t("Used in projects")} value={usedIn.length ? <>{usedIn.map((item) => { const entry = item.project_fabrics.find((candidate) => candidate.fabric_id === fabric.id); return <span className="detail-line" key={item.id}>{link("project", item.id, item.name)}{entry ? ` · ${number(entry.planned_quantity)} ${unitLabel(entry.quantity_unit)}` : ""}</span>; })}</> : null} />
               </dl>
             </>
           )}
@@ -102,15 +134,16 @@ export function ItemDialog({ selection, fabrics, patterns, projects, unit, langu
                 <Row label={t("Sizes or included views")} value={pattern.size_notes} />
                 <Row label={t("Notes")} value={pattern.notes} />
                 <Row label={t("File")} value={pattern.file_url ? <a className="file-link" href={pattern.file_url} rel="noreferrer" target="_blank">{t("Open file")}: {pattern.file_name}</a> : null} />
+                <Row label={t("Used in projects")} value={usedIn.length ? <>{usedIn.map((item) => <span className="detail-line" key={item.id}>{link("project", item.id, item.name)}</span>)}</> : null} />
               </dl>
             </>
           )}
           {project && (
             <dl className="detail-list">
               <Row label={t("Status")} value={projectStatusLabel(project.status, t)} />
-              <Row label={t("Pattern")} value={firstRelation(project.patterns)?.name ?? t("No pattern selected yet")} />
+              <Row label={t("Pattern")} value={project.pattern_id ? link("pattern", project.pattern_id, firstRelation(project.patterns)?.name ?? t("Pattern")) : t("No pattern selected yet")} />
               <Row label={t("Fabric")} value={project.project_fabrics.length ? (
-                <>{project.project_fabrics.map((item) => <span className="detail-line" key={item.fabric_id}>{firstRelation(item.fabrics)?.name ?? t("Fabric")}: {number(item.planned_quantity)} {unitLabel(item.quantity_unit)}</span>)}</>
+                <>{project.project_fabrics.map((item) => <span className="detail-line" key={item.fabric_id}>{link("fabric", item.fabric_id, firstRelation(item.fabrics)?.name ?? t("Fabric"))} · {number(item.planned_quantity)} {unitLabel(item.quantity_unit)}</span>)}</>
               ) : null} />
               <Row label={t("Notes")} value={project.notes} />
             </dl>
@@ -171,7 +204,7 @@ export function ItemDialog({ selection, fabrics, patterns, projects, unit, langu
           </div>
         </form>
       )}
-    </dialog>
+    </Modal>
   );
 }
 
